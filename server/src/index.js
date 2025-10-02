@@ -392,13 +392,13 @@ app.post('/api/calls/:sid/hangup', async (req, res) => {
 
 app.post('/api/calls/:sid/recording/start', async (req, res) => {
   if (!twilioClient) {
-    console.error('Recording start failed: Twilio client not configured');
+    logger.error('Recording start failed: Twilio client not configured');
     res.status(400).json({ error: 'Twilio client is not configured' });
     return;
   }
 
   const callSid = req.params.sid;
-  console.log(`Starting recording for call ${callSid}`);
+  logger.info({ callSid }, 'Starting recording for call');
 
   try {
     // First check if there's already an in-progress recording
@@ -409,22 +409,37 @@ app.post('/api/calls/:sid/recording/start', async (req, res) => {
 
     if (recordings.length > 0) {
       const recording = recordings[0];
-      console.log(`Found existing recording ${recording.sid} for call ${callSid}`);
+      logger.info({ callSid, recordingSid: recording.sid }, 'Found existing recording');
       activeRecordings.set(callSid, recording.sid);
       res.status(204).send();
       return;
     }
 
-    // If no existing recording, create a new one with transcription enabled
+    // If no existing recording, create a new one
     const recording = await twilioClient.calls(callSid).recordings.create({
       recordingStatusCallback: PUBLIC_BASE_URL ? `${PUBLIC_BASE_URL}/api/calls/status` : undefined,
       recordingStatusCallbackEvent: ['in-progress', 'completed']
     });
-    console.log(`Recording started successfully. Call SID: ${callSid}, Recording SID: ${recording.sid}`);
+
+    logger.info({ callSid, recordingSid: recording.sid }, 'Recording started successfully');
     activeRecordings.set(callSid, recording.sid);
+
+    // Also start real-time transcription
+    try {
+      const transcription = await twilioClient.calls(callSid).transcriptions.create({
+        name: `Transcription for ${callSid}`,
+        track: 'both_tracks',
+        statusCallbackUrl: PUBLIC_BASE_URL ? `${PUBLIC_BASE_URL}/api/transcriptions/realtime` : undefined,
+        statusCallbackMethod: 'POST'
+      });
+      logger.info({ callSid, transcriptionSid: transcription.sid }, 'Real-time transcription started');
+    } catch (transcriptionError) {
+      logger.warn({ callSid, error: transcriptionError.message }, 'Failed to start transcription, continuing with recording only');
+    }
+
     res.status(204).send();
   } catch (error) {
-    console.error('Unable to start recording:', error);
+    logger.error({ callSid, error: error.message }, 'Unable to start recording');
     res.status(500).json({ error: 'Unable to start recording', details: error.message });
   }
 });
