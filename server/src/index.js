@@ -505,27 +505,42 @@ app.post('/api/transcriptions', (req, res) => {
 });
 
 app.post('/api/transcriptions/realtime', (req, res) => {
-  console.log('Received transcription webhook:', {
-    body: req.body,
-    headers: req.headers
-  });
+  logger.debug({ body: req.body }, 'Received real-time transcription webhook');
 
   // Use the mapper to normalize different Twilio transcription formats
   const mapped = mapTwilioRealtimeEvent(req.body);
 
   if (!mapped) {
-    console.log('Ignoring invalid transcription event');
+    logger.warn('Ignoring invalid transcription event');
     res.status(202).send('ignored');
     return;
   }
 
-  console.log('Broadcasting transcription:', {
-    callSid: mapped.callSid,
-    payload: mapped.payload
-  });
-
+  logger.info({ callSid: mapped.callSid, text: mapped.payload.text }, 'Broadcasting transcription');
   broadcastTranscription(mapped.callSid, mapped.payload);
   res.status(204).send();
+});
+
+// Handle post-call recording transcriptions
+app.post('/api/transcriptions/recording', (req, res) => {
+  logger.info({ body: req.body }, 'Received recording transcription');
+
+  const { RecordingSid, TranscriptionSid, TranscriptionText, CallSid } = req.body;
+
+  if (CallSid && TranscriptionText) {
+    // Broadcast the full transcription as a final event
+    broadcastTranscription(CallSid, {
+      chunkId: TranscriptionSid || `transcription-${Date.now()}`,
+      text: TranscriptionText,
+      isFinal: true,
+      timestamp: Date.now(),
+      source: 'recording'
+    });
+
+    logger.info({ callSid: CallSid, recordingSid: RecordingSid }, 'Recording transcription broadcasted');
+  }
+
+  res.status(200).send('OK');
 });
 
 app.post('/api/calls/status', (req, res) => {
@@ -600,6 +615,9 @@ app.post('/voice', (req, res) => {
     dialOptions.record = 'record-from-answer';
     dialOptions.recordingStatusCallbackMethod = 'POST';
     dialOptions.trim = 'trim-silence';
+    // Enable transcription on recordings (post-call)
+    dialOptions.transcribe = true;
+    dialOptions.transcribeCallback = `${PUBLIC_BASE_URL}/api/transcriptions/recording`;
   }
 
   if (PUBLIC_BASE_URL) {
