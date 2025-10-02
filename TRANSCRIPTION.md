@@ -7,43 +7,44 @@ CallBurner now uses **Twilio's Real-Time Transcription API** to provide live tra
 ## 📋 Architecture
 
 ```
-1. User clicks "Start Recording" button
+1. User makes a call
    ↓
-2. Server calls Twilio API to:
-   - Start recording
-   - Start real-time transcription
+2. Twilio requests TwiML from server /voice endpoint
    ↓
-3. Twilio transcribes audio in real-time
+3. Server returns TwiML with <Start><Transcription>
    ↓
-4. Twilio sends transcription events to:
+4. Twilio transcribes audio in real-time (automatically)
+   ↓
+5. Twilio sends transcription events to:
    POST /api/transcriptions/realtime
    ↓
-5. Server broadcasts to WebSocket clients
+6. Server broadcasts to WebSocket clients
    ↓
-6. Transcription appears in browser UI
+7. Transcription appears in browser UI
 ```
 
 ## 🚀 Implementation Details
 
 ### Starting Transcription
 
-When you click "Start Recording", the server makes two API calls:
+Real-time transcription starts **automatically when the call connects** via TwiML:
 
 ```javascript
-// 1. Start recording
-const recording = await twilioClient.calls(callSid).recordings.create({
-  recordingStatusCallback: `${PUBLIC_BASE_URL}/api/calls/status`,
-  recordingStatusCallbackEvent: ['in-progress', 'completed']
-});
-
-// 2. Start real-time transcription
-const transcription = await twilioClient.calls(callSid).transcriptions.create({
-  name: `Transcription for ${callSid}`,
+// In the /voice endpoint, add <Start><Transcription> to the TwiML
+const start = twiml.start();
+start.transcription({
+  name: `Transcription for ${CallSid}`,
   track: 'both_tracks',  // Transcribe both caller and callee
   statusCallbackUrl: `${PUBLIC_BASE_URL}/api/transcriptions/realtime`,
   statusCallbackMethod: 'POST'
 });
+
+// Then dial the call
+const dial = twiml.dial(dialOptions);
+dial.number(phoneNumber);
 ```
+
+**Important**: Transcription starts **automatically when the call connects**, NOT when you click "Start Recording". Recording and transcription are independent features.
 
 ### Receiving Transcription Events
 
