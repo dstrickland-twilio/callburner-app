@@ -424,18 +424,8 @@ app.post('/api/calls/:sid/recording/start', async (req, res) => {
     logger.info({ callSid, recordingSid: recording.sid }, 'Recording started successfully');
     activeRecordings.set(callSid, recording.sid);
 
-    // Also start real-time transcription
-    try {
-      const transcription = await twilioClient.calls(callSid).transcriptions.create({
-        name: `Transcription for ${callSid}`,
-        track: 'both_tracks',
-        statusCallbackUrl: PUBLIC_BASE_URL ? `${PUBLIC_BASE_URL}/api/transcriptions/realtime` : undefined,
-        statusCallbackMethod: 'POST'
-      });
-      logger.info({ callSid, transcriptionSid: transcription.sid }, 'Real-time transcription started');
-    } catch (transcriptionError) {
-      logger.warn({ callSid, error: transcriptionError.message }, 'Failed to start transcription, continuing with recording only');
-    }
+    // Note: Real-time transcription is started via TwiML in the /voice endpoint
+    // This ensures transcription begins immediately when the call connects
 
     res.status(204).send();
   } catch (error) {
@@ -647,6 +637,15 @@ app.post('/voice', (req, res) => {
     // Action URL to continue call flow after dial completes
     dialOptions.action = `${PUBLIC_BASE_URL}/voice/continue?callSid=${CallSid}`;
     dialOptions.method = 'POST';
+
+    // Start real-time transcription
+    const start = twiml.start();
+    start.transcription({
+      name: `Transcription for ${CallSid}`,
+      track: 'both_tracks',
+      statusCallbackUrl: `${PUBLIC_BASE_URL}/api/transcriptions/realtime`,
+      statusCallbackMethod: 'POST'
+    });
   }
 
   const dial = twiml.dial(dialOptions);
