@@ -1,0 +1,8 @@
+{
+  "name": "callburner-functions",
+  "private": true,
+  "version": "0.1.0",
+  "dependencies": {
+    "twilio": "^4.22.0"
+  }
+}
