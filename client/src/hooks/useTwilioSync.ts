@@ -62,7 +62,7 @@ export const useTwilioSync = (callSid?: string) => {
           const list = await syncClient.list(listName);
 
           // Get existing items
-          const existingItems = await list.getItems();
+          const existingItems = await list.getItems({ limit: 100 });
           const existingEvents = existingItems.items.map(item => item.data as TranscriptionEvent);
           if (!isCleanedUp) {
             setEvents(existingEvents);
@@ -115,19 +115,8 @@ export const useTwilioSync = (callSid?: string) => {
           });
 
         } catch (error: any) {
-          // List might not exist yet, that's okay
+          // List might not exist yet, that's okay - it will be created when first transcription arrives
           console.log('Transcription list not yet created:', error.message);
-
-          // Subscribe to list creation
-          syncClient.on('listAdded', async (list) => {
-            if (list.uniqueName === listName) {
-              console.log('Transcription list created');
-              // Re-run init to subscribe
-              if (!isCleanedUp) {
-                initSync();
-              }
-            }
-          });
         }
 
       } catch (error) {
