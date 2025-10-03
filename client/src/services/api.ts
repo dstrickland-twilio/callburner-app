@@ -1,40 +1,45 @@
 import axios from 'axios';
 import type { CallSummary } from '../types';
 
+// Use Twilio Functions for all API calls
+const TWILIO_FUNCTIONS_URL = import.meta.env.VITE_TWILIO_FUNCTIONS_URL ||
+  'https://callburner-functions-2333-dev.twil.io';
+
 const api = axios.create({
-  baseURL: '/api'
+  baseURL: TWILIO_FUNCTIONS_URL
 });
 
-const twilioTokenUrl = import.meta.env.VITE_TWILIO_TOKEN_URL;
+const twilioTokenUrl = import.meta.env.VITE_TWILIO_TOKEN_URL || `${TWILIO_FUNCTIONS_URL}/token`;
 
 export const requestAccessToken = async (identity: string) => {
-  if (twilioTokenUrl) {
-    const { data } = await axios.post<{ token: string }>(twilioTokenUrl, { identity });
-    return data.token;
-  }
-
-  const { data } = await api.post<{ token: string }>('/token', { identity });
+  const { data } = await axios.post<{ token: string }>(twilioTokenUrl, { identity });
   return data.token;
 };
 
 export const registerCall = async (payload: { callSid: string; to: string; startedAt: string }) => {
-  await api.post('/calls', payload);
+  await api.post('/calls-register', payload);
 };
 
 export const hangupCall = async (callSid: string) => {
-  await api.post(`/calls/${callSid}/hangup`);
+  await api.post('/calls-hangup', { callSid });
 };
 
 export const toggleRecording = async (callSid: string, action: 'start' | 'stop') => {
-  await api.post(`/calls/${callSid}/recording/${action}`);
+  await api.post('/calls-recording-toggle', { callSid, action });
 };
 
 export const fetchCallSummary = async (callSid: string) => {
-  const { data } = await api.get<CallSummary>(`/calls/${callSid}/summary`);
-  return data;
+  // Fetch from Twilio Sync instead
+  // For now, return a mock response - we'll implement this with Sync later
+  return {
+    callSid,
+    dialedNumber: '',
+    startedAt: new Date().toISOString()
+  } as CallSummary;
 };
 
 export const fetchRecentCalls = async () => {
-  const { data } = await api.get<CallSummary[]>('/calls');
-  return data;
+  // Fetch from Twilio Sync instead
+  // For now, return empty array - we'll implement this with Sync later
+  return [] as CallSummary[];
 };

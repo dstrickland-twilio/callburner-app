@@ -1,5 +1,8 @@
 exports.handler = function voiceHandler(context, event, callback) {
-  const { TWILIO_CALLER_ID, PUBLIC_BASE_URL } = context;
+  const { TWILIO_CALLER_ID } = context;
+
+  // Use the Twilio Functions domain for callbacks
+  const baseUrl = `https://${context.DOMAIN_NAME}`;
 
   const dialOptions = {
     answerOnBridge: true // Enables media streams to be established before call is connected
@@ -11,21 +14,7 @@ exports.handler = function voiceHandler(context, event, callback) {
 
   if (event.record === 'true') {
     dialOptions.record = 'record-from-answer';
-    dialOptions.recordingStatusCallback = `${PUBLIC_BASE_URL}/api/calls/status`;
-    dialOptions.recordingStatusCallbackEvent = ['in-progress', 'completed'];
-    dialOptions.recordingStatusCallbackMethod = 'POST';
     dialOptions.trim = 'trim-silence';
-  }
-
-  // Add recording status callback regardless of record parameter
-  if (PUBLIC_BASE_URL) {
-    dialOptions.recordingStatusCallback = `${PUBLIC_BASE_URL}/api/calls/status`;
-    dialOptions.recordingStatusCallbackEvent = ['in-progress', 'completed'];
-  }
-
-  if (PUBLIC_BASE_URL) {
-    dialOptions.statusCallback = `${PUBLIC_BASE_URL}/api/calls/status`;
-    dialOptions.statusCallbackEvent = ['initiated', 'ringing', 'answered', 'completed'];
   }
 
   const destination = event.To;
@@ -33,10 +22,8 @@ exports.handler = function voiceHandler(context, event, callback) {
   // Build TwiML manually to include transcription
   let twimlStr = '<?xml version="1.0" encoding="UTF-8"?><Response>';
 
-  // Add transcription start if PUBLIC_BASE_URL is available
-  if (PUBLIC_BASE_URL) {
-    twimlStr += `<Start><Transcription name="Transcription for ${event.CallSid}" track="both_tracks" statusCallbackUrl="${PUBLIC_BASE_URL}/api/transcriptions/realtime" statusCallbackMethod="POST" /></Start>`;
-  }
+  // Add transcription start
+  twimlStr += `<Start><Transcription name="Transcription for ${event.CallSid}" track="both_tracks" statusCallbackUrl="${baseUrl}/transcription-realtime" statusCallbackMethod="POST" /></Start>`;
 
   // Build dial options as XML attributes
   let dialAttrs = 'answerOnBridge="true"';
@@ -46,13 +33,13 @@ exports.handler = function voiceHandler(context, event, callback) {
   if (event.record === 'true') {
     dialAttrs += ' record="record-from-answer" trim="trim-silence"';
   }
-  if (PUBLIC_BASE_URL) {
-    dialAttrs += ` recordingStatusCallback="${PUBLIC_BASE_URL}/api/calls/status"`;
-    dialAttrs += ' recordingStatusCallbackEvent="in-progress completed"';
-    dialAttrs += ' recordingStatusCallbackMethod="POST"';
-    dialAttrs += ` statusCallback="${PUBLIC_BASE_URL}/api/calls/status"`;
-    dialAttrs += ' statusCallbackEvent="initiated ringing answered completed"';
-  }
+
+  // Add callbacks to Twilio Functions endpoints
+  dialAttrs += ` recordingStatusCallback="${baseUrl}/calls-status"`;
+  dialAttrs += ' recordingStatusCallbackEvent="in-progress completed"';
+  dialAttrs += ' recordingStatusCallbackMethod="POST"';
+  dialAttrs += ` statusCallback="${baseUrl}/calls-status"`;
+  dialAttrs += ' statusCallbackEvent="initiated ringing answered completed"';
 
   twimlStr += `<Dial ${dialAttrs}>`;
 

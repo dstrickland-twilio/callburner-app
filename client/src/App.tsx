@@ -5,7 +5,7 @@ import PhoneNumberInput from './components/PhoneNumberInput';
 import TranscriptionPane from './components/TranscriptionPane';
 import CallSummaryModal from './components/CallSummaryModal';
 import { useTwilioDevice } from './hooks/useTwilioDevice';
-import { useTranscriptionStream } from './hooks/useTranscriptionStream';
+import { useTwilioSync } from './hooks/useTwilioSync';
 import { fetchCallSummary, fetchRecentCalls, hangupCall, registerCall, toggleRecording } from './services/api';
 import type { CallPhase, CallSummary } from './types';
 
@@ -26,7 +26,7 @@ function App() {
   const [recentCalls, setRecentCalls] = useState<CallSummary[]>([]);
   const [uiMessage, setUiMessage] = useState<string | null>(null);
 
-  const { events } = useTranscriptionStream(callSid);
+  const { events, isConnected } = useTwilioSync(callSid);
 
   const refreshSummary = async (sid: string, dialedNumber: string) => {
     try {
