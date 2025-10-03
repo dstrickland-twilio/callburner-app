@@ -606,10 +606,10 @@ app.post('/voice', (req, res) => {
 
   console.log('Voice webhook received:', req.body);
   const { To, record, CallSid } = req.body;
-  const twiml = new Twilio.twiml.VoiceResponse();
 
+  // Build dial options
   const dialOptions = {
-    answerOnBridge: true // This enables media streams to be established before the call is connected
+    answerOnBridge: true
   };
 
   if (TWILIO_CALLER_ID) {
@@ -637,32 +637,56 @@ app.post('/voice', (req, res) => {
     // Action URL to continue call flow after dial completes
     dialOptions.action = `${PUBLIC_BASE_URL}/voice/continue?callSid=${CallSid}`;
     dialOptions.method = 'POST';
-
-    // Start real-time transcription
-    const start = twiml.start();
-    start.transcription({
-      name: `Transcription for ${CallSid}`,
-      track: 'both_tracks',
-      statusCallbackUrl: `${PUBLIC_BASE_URL}/api/transcriptions/realtime`,
-      statusCallbackMethod: 'POST'
-    });
   }
 
-  const dial = twiml.dial(dialOptions);
+  // Build TwiML manually to include transcription (helper library doesn't support it properly)
+  let twimlStr = '<?xml version="1.0" encoding="UTF-8"?><Response>';
+
+  // Add transcription start if PUBLIC_BASE_URL is available
+  if (PUBLIC_BASE_URL) {
+    twimlStr += `<Start><Transcription name="Transcription for ${CallSid}" track="both_tracks" statusCallbackUrl="${PUBLIC_BASE_URL}/api/transcriptions/realtime" statusCallbackMethod="POST" /></Start>`;
+  }
+
+  // Build dial options as XML attributes
+  let dialAttrs = 'answerOnBridge="true"';
+  if (TWILIO_CALLER_ID) {
+    dialAttrs += ` callerId="${TWILIO_CALLER_ID}"`;
+  }
+  if (record === 'true') {
+    dialAttrs += ' record="record-from-answer" trim="trim-silence"';
+    dialAttrs += ` transcribe="true" transcribeCallback="${PUBLIC_BASE_URL}/api/transcriptions/recording"`;
+  }
+  if (PUBLIC_BASE_URL) {
+    dialAttrs += ` recordingStatusCallback="${PUBLIC_BASE_URL}/api/calls/status"`;
+    dialAttrs += ' recordingStatusCallbackEvent="in-progress completed"';
+    dialAttrs += ' recordingStatusCallbackMethod="POST"';
+    dialAttrs += ` statusCallback="${PUBLIC_BASE_URL}/api/calls/status"`;
+    dialAttrs += ' statusCallbackEvent="initiated ringing answered completed"';
+    dialAttrs += ` action="${PUBLIC_BASE_URL}/voice/continue?callSid=${CallSid}"`;
+    dialAttrs += ' method="POST"';
+  }
+
+  twimlStr += `<Dial ${dialAttrs}>`;
+
   if (To && /^\+?[\d*#]+$/.test(To)) {
     if (!TWILIO_CALLER_ID) {
-      twiml.say('Outbound dialing is not configured properly. Please set TWILIO_CALLER_ID.');
+      twimlStr = '<?xml version="1.0" encoding="UTF-8"?><Response><Say>Outbound dialing is not configured properly. Please set TWILIO_CALLER_ID.</Say></Response>';
     } else {
-      dial.number(To);
+      twimlStr += `<Number>${To}</Number>`;
     }
   } else if (To) {
-    dial.client(To);
+    twimlStr += `<Client>${To}</Client>`;
   } else {
-    twiml.say('No destination number provided.');
+    twimlStr = '<?xml version="1.0" encoding="UTF-8"?><Response><Say>No destination number provided.</Say></Response>';
   }
 
+  if (To && (TWILIO_CALLER_ID || !/^\+?[\d*#]+$/.test(To))) {
+    twimlStr += '</Dial>';
+  }
+  twimlStr += '</Response>';
+
   res.type('text/xml');
-  res.send(twiml.toString());
+  res.send(twimlStr);
 });
 
 // Continue handler for after dial completes

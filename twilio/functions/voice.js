@@ -1,6 +1,5 @@
 exports.handler = function voiceHandler(context, event, callback) {
   const { TWILIO_CALLER_ID, PUBLIC_BASE_URL } = context;
-  const twiml = new Twilio.twiml.VoiceResponse();
 
   const dialOptions = {
     answerOnBridge: true // Enables media streams to be established before call is connected
@@ -31,21 +30,51 @@ exports.handler = function voiceHandler(context, event, callback) {
 
   const destination = event.To;
 
-  const dial = twiml.dial(dialOptions);
+  // Build TwiML manually to include transcription
+  let twimlStr = '<?xml version="1.0" encoding="UTF-8"?><Response>';
+
+  // Add transcription start if PUBLIC_BASE_URL is available
+  if (PUBLIC_BASE_URL) {
+    twimlStr += `<Start><Transcription name="Transcription for ${event.CallSid}" track="both_tracks" statusCallbackUrl="${PUBLIC_BASE_URL}/api/transcriptions/realtime" statusCallbackMethod="POST" /></Start>`;
+  }
+
+  // Build dial options as XML attributes
+  let dialAttrs = 'answerOnBridge="true"';
+  if (TWILIO_CALLER_ID) {
+    dialAttrs += ` callerId="${TWILIO_CALLER_ID}"`;
+  }
+  if (event.record === 'true') {
+    dialAttrs += ' record="record-from-answer" trim="trim-silence"';
+  }
+  if (PUBLIC_BASE_URL) {
+    dialAttrs += ` recordingStatusCallback="${PUBLIC_BASE_URL}/api/calls/status"`;
+    dialAttrs += ' recordingStatusCallbackEvent="in-progress completed"';
+    dialAttrs += ' recordingStatusCallbackMethod="POST"';
+    dialAttrs += ` statusCallback="${PUBLIC_BASE_URL}/api/calls/status"`;
+    dialAttrs += ' statusCallbackEvent="initiated ringing answered completed"';
+  }
+
+  twimlStr += `<Dial ${dialAttrs}>`;
+
   if (destination && /^\+?[\d*#]+$/.test(destination)) {
     if (!TWILIO_CALLER_ID) {
-      twiml.say('Outbound dialing is not configured. Please set a caller ID number.');
+      twimlStr = '<?xml version="1.0" encoding="UTF-8"?><Response><Say>Outbound dialing is not configured. Please set a caller ID number.</Say></Response>';
     } else {
-      dial.number(destination);
+      twimlStr += `<Number>${destination}</Number>`;
     }
   } else if (destination) {
-    dial.client(destination);
+    twimlStr += `<Client>${destination}</Client>`;
   } else {
-    twiml.say('No destination number provided.');
+    twimlStr = '<?xml version="1.0" encoding="UTF-8"?><Response><Say>No destination number provided.</Say></Response>';
   }
+
+  if (destination && (TWILIO_CALLER_ID || !/^\+?[\d*#]+$/.test(destination))) {
+    twimlStr += '</Dial>';
+  }
+  twimlStr += '</Response>';
 
   const response = new Twilio.Response();
   response.appendHeader('Content-Type', 'text/xml');
-  response.setBody(twiml.toString());
+  response.setBody(twimlStr);
   callback(null, response);
 };
