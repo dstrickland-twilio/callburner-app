@@ -55,8 +55,12 @@ button {
 .layout {
   flex: 1;
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  grid-template-columns: 380px 1fr;
   gap: 24px;
+}
+
+.dialer-panel {
+  max-width: 380px;
 }
 
 .panel {
@@ -108,13 +112,13 @@ button {
   position: relative;
   background: linear-gradient(145deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.02));
   border: none;
-  border-radius: 12px;
-  padding: 12px 8px;
+  border-radius: 10px;
+  padding: 10px 6px;
   color: inherit;
-  font-size: 20px;
+  font-size: 18px;
   cursor: pointer;
   transition: transform 0.12s ease, box-shadow 0.12s ease;
-  min-height: 60px;
+  min-height: 50px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -351,6 +355,10 @@ button {
 @media (max-width: 900px) {
   .layout {
     grid-template-columns: 1fr;
+  }
+
+  .dialer-panel {
+    max-width: 100%;
   }
 
   .panel {
