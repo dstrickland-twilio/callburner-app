@@ -9,20 +9,22 @@ exports.handler = async function(context, event, callback) {
   response.appendHeader('Content-Type', 'text/plain');
 
   try {
-    // Parse the incoming transcription event
-    const eventType = event.EventType || event.eventType;
-    const transcriptionPayload = typeof event.Transcription === 'string'
-      ? JSON.parse(event.Transcription)
-      : event.Transcription;
+    // Skip non-content events
+    if (event.TranscriptionEvent !== 'transcription-content') {
+      console.log('Ignoring non-content event:', event.TranscriptionEvent);
+      response.setStatusCode(202);
+      response.setBody('ignored');
+      return callback(null, response);
+    }
 
-    const segmentPayload = event.segment || event.Segment || transcriptionPayload?.segment;
-    const callSid = event.CallSid || event.callSid || transcriptionPayload?.callSid || segmentPayload?.callSid;
+    const callSid = event.CallSid;
 
-    const text = segmentPayload?.text ||
-                 segmentPayload?.transcript ||
-                 segmentPayload?.alternatives?.[0]?.transcript ||
-                 event.TranscriptionText ||
-                 event.text;
+    // Parse TranscriptionData JSON string
+    const transcriptionData = event.TranscriptionData
+      ? JSON.parse(event.TranscriptionData)
+      : null;
+
+    const text = transcriptionData?.transcript;
 
     if (!callSid || !text) {
       console.log('Invalid transcription event - missing callSid or text');
@@ -31,17 +33,8 @@ exports.handler = async function(context, event, callback) {
       return callback(null, response);
     }
 
-    const chunkId = segmentPayload?.sid ||
-                    event.SegmentSid ||
-                    event.TranscriptionSid ||
-                    `twilio-${Date.now()}`;
-
-    const status = segmentPayload?.status || event.SegmentStatus || event.status;
-    const isFinal = segmentPayload?.isFinal ||
-                    event.IsFinal ||
-                    (status && ['final', 'completed'].includes(status.toLowerCase())) ||
-                    (eventType && eventType.toLowerCase().includes('completed'));
-
+    const chunkId = `${event.TranscriptionSid}-${event.SequenceId}`;
+    const isFinal = event.Final === 'true';
     const timestamp = Date.now();
 
     // Create transcription event object

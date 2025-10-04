@@ -42,7 +42,7 @@ exports.handler = function(context, event, callback) {
 
     token.addGrant(syncGrant);
 
-    response.setBody(JSON.stringify({ token: token.toJwt() }));
+    response.setBody({ token: token.toJwt() });
     callback(null, response);
 
   } catch (error) {

@@ -9,7 +9,20 @@
       "Bash(git add:*)",
       "Bash(git commit:*)",
       "Bash(git push:*)",
-      "Bash(curl:*)"
+      "Bash(curl:*)",
+      "Bash(npm run deploy:twilio:*)",
+      "Bash(npm run:*)",
+      "Bash(twilio serverless:logs:*)",
+      "Bash(twilio serverless:deploy:*)",
+      "Bash(python3:*)",
+      "Bash(twilio api:sync:v1:services:create:*)",
+      "Bash(npm install:*)",
+      "Bash(git restore:*)",
+      "Bash(lsof:*)",
+      "Bash(xargs kill:*)",
+      "Bash(for file in *.css *.js)",
+      "Bash(do [ -f \"$file\" ])",
+      "Bash(done)"
     ],
     "deny": [],
     "ask": []

@@ -23,7 +23,7 @@ exports.handler = function voiceHandler(context, event, callback) {
   let twimlStr = '<?xml version="1.0" encoding="UTF-8"?><Response>';
 
   // Add transcription start
-  twimlStr += `<Start><Transcription name="Transcription for ${event.CallSid}" track="both_tracks" statusCallbackUrl="${baseUrl}/transcription-realtime" statusCallbackMethod="POST" /></Start>`;
+  twimlStr += `<Start><Transcription name="Transcription for ${event.CallSid}" track="both_tracks" statusCallbackUrl="${baseUrl}/transcription-realtime" /></Start>`;
 
   // Build dial options as XML attributes
   let dialAttrs = 'answerOnBridge="true"';

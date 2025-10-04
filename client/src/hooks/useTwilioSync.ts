@@ -31,6 +31,8 @@ export const useTwilioSync = (callSid?: string) => {
 
     const initSync = async () => {
       try {
+        console.log('[Sync] Requesting token from:', `${TWILIO_FUNCTIONS_URL}/sync-token`);
+
         // Request a Sync token
         const response = await fetch(`${TWILIO_FUNCTIONS_URL}/sync-token`, {
           method: 'POST',
@@ -39,10 +41,16 @@ export const useTwilioSync = (callSid?: string) => {
         });
 
         if (!response.ok) {
-          throw new Error('Failed to get Sync token');
+          const errorText = await response.text();
+          console.error('[Sync] Token request failed:', response.status, errorText);
+          throw new Error(`Failed to get Sync token: ${response.status}`);
         }
 
-        const { token } = await response.json();
+        const responseText = await response.text();
+        console.log('[Sync] Token response:', responseText);
+
+        const data = JSON.parse(responseText);
+        const { token } = data;
 
         if (isCleanedUp) return;
 
