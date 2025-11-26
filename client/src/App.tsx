@@ -20,13 +20,15 @@ function App() {
   const [callSid, setCallSid] = useState<string | undefined>();
   const callSidRef = useRef<string>();
   const [isAutoRecord, setIsAutoRecord] = useState(true);
+  const [isAmdEnabled] = useState(true); // AMD always enabled
   const [isRecording, setIsRecording] = useState(false);
   const [activeCallSummary, setActiveCallSummary] = useState<CallSummary | null>(null);
   const [showSummaryModal, setShowSummaryModal] = useState(false);
   const [recentCalls, setRecentCalls] = useState<CallSummary[]>([]);
   const [uiMessage, setUiMessage] = useState<string | null>(null);
+  const [lastAmdStatus, setLastAmdStatus] = useState<string | null>(null);
 
-  const { events, isConnected } = useTwilioSync(callSid);
+  const { events, isConnected, amdStatus } = useTwilioSync(callSid);
 
   const refreshSummary = async (sid: string, dialedNumber: string) => {
     try {
@@ -72,6 +74,20 @@ function App() {
     }
   }, [error]);
 
+  // Show message when AMD status changes
+  useEffect(() => {
+    if (amdStatus && amdStatus !== lastAmdStatus && amdStatus !== 'Detecting') {
+      const messages = {
+        'Human': '👤 Human answered',
+        'Voicemail': '📧 Voicemail detected',
+        'Fax': '📠 Fax machine detected',
+        'Machine': '🤖 Machine detected'
+      };
+      setLastAmdStatus(amdStatus);
+      setUiMessage(messages[amdStatus as keyof typeof messages] || `AMD: ${amdStatus}`);
+    }
+  }, [amdStatus, lastAmdStatus]);
+
   useEffect(() => {
     const loadRecentCalls = async () => {
       try {
@@ -107,7 +123,7 @@ function App() {
 
     setUiMessage(null);
     try {
-      const connection = await connect({ to: dialedDigits, record: isAutoRecord });
+      const connection = await connect({ to: dialedDigits, record: isAutoRecord, amd: isAmdEnabled });
 
       connection.on('accept', async () => {
         const sid = connection.parameters.CallSid;
@@ -117,9 +133,10 @@ function App() {
         setActiveCallSummary({
           callSid: sid,
           dialedNumber: dialedDigits,
-          startedAt
+          startedAt,
+          amdEnabled: isAmdEnabled
         });
-        await registerCall({ callSid: sid, to: dialedDigits, startedAt });
+        await registerCall({ callSid: sid, to: dialedDigits, startedAt, amdEnabled: isAmdEnabled });
         setIsRecording(isAutoRecord);
         setUiMessage('Call connected');
       });
@@ -209,7 +226,7 @@ function App() {
         </section>
 
         <section className="panel transcription-panel">
-          <TranscriptionPane events={events} isStreaming={callPhase === 'in-call' || callPhase === 'recording'} />
+          <TranscriptionPane events={events} isStreaming={callPhase === 'in-call' || callPhase === 'recording'} amdStatus={amdStatus} />
         </section>
       </main>
 

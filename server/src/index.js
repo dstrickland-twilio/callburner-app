@@ -335,7 +335,7 @@ app.post('/api/token', (req, res) => {
 });
 
 app.post('/api/calls', (req, res) => {
-  const { callSid, to, startedAt } = req.body;
+  const { callSid, to, startedAt, amdEnabled } = req.body;
   if (!callSid || !to) {
     res.status(400).json({ error: 'callSid and to are required' });
     return;
@@ -345,8 +345,14 @@ app.post('/api/calls', (req, res) => {
     callSid,
     dialedNumber: to,
     startedAt,
-    status: 'in-progress'
+    status: 'in-progress',
+    amdEnabled: amdEnabled === true
   };
+
+  // Set initial AMD status if AMD is enabled
+  if (amdEnabled === true) {
+    summary.amdStatus = 'Detecting';
+  }
 
   callStore.set(callSid, summary);
 
@@ -605,7 +611,7 @@ app.post('/voice', (req, res) => {
   }
 
   console.log('Voice webhook received:', req.body);
-  const { To, record, CallSid } = req.body;
+  const { To, record, CallSid, amd } = req.body;
 
   // Build dial options
   const dialOptions = {
@@ -666,6 +672,18 @@ app.post('/voice', (req, res) => {
     dialAttrs += ' method="POST"';
   }
 
+  // Add AMD v3 (Async Answering Machine Detection) if enabled
+  if (amd === 'true' && PUBLIC_BASE_URL) {
+    dialAttrs += ' machineDetection="DetectMessageEnd"';
+    dialAttrs += ' asyncAmd="true"';
+    dialAttrs += ` asyncAmdStatusCallback="${PUBLIC_BASE_URL}/api/calls/amd"`;
+    dialAttrs += ' asyncAmdStatusCallbackMethod="POST"';
+    dialAttrs += ' machineDetectionTimeout="30"';
+    dialAttrs += ' machineDetectionSpeechThreshold="2400"';
+    dialAttrs += ' machineDetectionSpeechEndThreshold="1500"';
+    console.log('AMD v3 enabled for call:', CallSid);
+  }
+
   twimlStr += `<Dial ${dialAttrs}>`;
 
   if (To && /^\+?[\d*#]+$/.test(To)) {
@@ -699,6 +717,53 @@ app.post('/voice/continue', (req, res) => {
 
   res.type('text/xml');
   res.send(twiml.toString());
+});
+
+// AMD v3 (Answering Machine Detection) callback handler
+app.post('/api/calls/amd', (req, res) => {
+  const { CallSid, AnsweredBy, MachineDetectionDuration, Confidence } = req.body;
+  
+  console.log('AMD callback received:', {
+    callSid: CallSid,
+    answeredBy: AnsweredBy,
+    duration: MachineDetectionDuration,
+    confidence: Confidence
+  });
+
+  if (!CallSid) {
+    res.status(400).json({ error: 'CallSid is required' });
+    return;
+  }
+
+  // Map Twilio AMD results to user-friendly status
+  let amdStatus = 'Unknown';
+  if (AnsweredBy === 'human') {
+    amdStatus = 'Human';
+  } else if (AnsweredBy && AnsweredBy.startsWith('machine_end_')) {
+    amdStatus = 'Voicemail';
+  } else if (AnsweredBy === 'fax') {
+    amdStatus = 'Fax';
+  } else if (AnsweredBy === 'unknown') {
+    amdStatus = 'Unknown';
+  }
+
+  // Update call store with AMD result
+  const summary = callStore.get(CallSid);
+  if (summary) {
+    summary.amdStatus = amdStatus;
+    summary.amdResult = AnsweredBy;
+    summary.amdConfidence = Confidence;
+    summary.amdDuration = MachineDetectionDuration;
+    summary.amdTimestamp = new Date().toISOString();
+    callStore.set(CallSid, summary);
+    
+    console.log(`Updated call ${CallSid} with AMD status: ${amdStatus}`);
+  } else {
+    console.warn(`Call ${CallSid} not found in call store for AMD update`);
+  }
+
+  // Acknowledge receipt
+  res.status(204).send();
 });
 
 if (hasClientBundle) {

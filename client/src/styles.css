@@ -365,3 +365,106 @@ button {
     padding: 20px;
   }
 }
+
+/* AMD Badge Styles */
+.amd-badge {
+  border-radius: 999px;
+  padding: 4px 12px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.amd-badge.voicemail {
+  background: rgba(255, 193, 7, 0.18);
+  color: #ffc107;
+}
+
+.amd-badge.human {
+  background: rgba(41, 211, 171, 0.18);
+  color: #2fe3c4;
+}
+
+.amd-badge.fax {
+  background: rgba(156, 39, 176, 0.18);
+  color: #ce93d8;
+}
+
+.amd-badge.machine {
+  background: rgba(255, 152, 0, 0.18);
+  color: #ffab40;
+}
+
+/* AMD Result Card */
+.amd-result-card {
+  border-radius: 12px;
+  padding: 16px;
+  margin-bottom: 20px;
+  border-left: 4px solid;
+}
+
+.amd-result-card.amd-human {
+  background: rgba(41, 211, 171, 0.12);
+  border-left-color: #2fe3c4;
+}
+
+.amd-result-card.amd-voicemail {
+  background: rgba(255, 193, 7, 0.12);
+  border-left-color: #ffc107;
+}
+
+.amd-result-card.amd-fax {
+  background: rgba(156, 39, 176, 0.12);
+  border-left-color: #ce93d8;
+}
+
+.amd-result-card.amd-machine {
+  background: rgba(255, 152, 0, 0.12);
+  border-left-color: #ffab40;
+}
+
+.amd-result-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.amd-icon {
+  font-size: 32px;
+  line-height: 1;
+}
+
+.amd-result-info {
+  flex: 1;
+}
+
+.amd-status-label {
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+
+.amd-description {
+  font-size: 13px;
+  opacity: 0.75;
+}
+
+.amd-meta {
+  font-size: 12px;
+  opacity: 0.65;
+  margin-left: 44px;
+}
+
+/* Speaker Label Styles */
+.chunk-content {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+}
+
+.speaker-label {
+  font-weight: 600;
+  font-size: 12px;
+  opacity: 0.8;
+  min-width: 70px;
+}

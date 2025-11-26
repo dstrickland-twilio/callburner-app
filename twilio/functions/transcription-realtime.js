@@ -1,92 +1,53 @@
-/**
- * Webhook handler for real-time transcription events from Twilio
- * Writes transcription events to Twilio Sync for real-time broadcast to clients
- */
 exports.handler = async function(context, event, callback) {
-  const { TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_SYNC_SERVICE_SID } = context;
-
   const response = new Twilio.Response();
   response.appendHeader('Content-Type', 'text/plain');
 
-  try {
-    // Skip non-content events
-    if (event.TranscriptionEvent !== 'transcription-content') {
-      console.log('Ignoring non-content event:', event.TranscriptionEvent);
-      response.setStatusCode(202);
-      response.setBody('ignored');
-      return callback(null, response);
-    }
+  const transcriptionEvent = event.TranscriptionEvent;
+  const callSid = event.CallSid;
 
-    const callSid = event.CallSid;
+  console.log(`Transcription event: ${transcriptionEvent} for call ${callSid}`);
 
-    // Parse TranscriptionData JSON string
-    const transcriptionData = event.TranscriptionData
-      ? JSON.parse(event.TranscriptionData)
-      : null;
+  // Handle different transcription events
+  switch (transcriptionEvent) {
+    case 'transcription-started':
+      console.log('Transcription started for call', callSid);
+      response.setBody('ok');
+      break;
 
-    const text = transcriptionData?.transcript;
+    case 'transcription-stopped':
+      console.log('Transcription stopped for call', callSid);
+      response.setBody('ok');
+      break;
 
-    if (!callSid || !text) {
-      console.log('Invalid transcription event - missing callSid or text');
-      response.setStatusCode(202);
-      response.setBody('ignored');
-      return callback(null, response);
-    }
+    case 'transcription-content':
+      // Get transcription data
+      const transcriptionText = event.TranscriptionText;
+      const track = event.Track; // 'inbound_track', 'outbound_track', or 'both_tracks'
+      const sequenceId = event.SequenceId;
 
-    const chunkId = `${event.TranscriptionSid}-${event.SequenceId}`;
-    const isFinal = event.Final === 'true';
-    const timestamp = Date.now();
-
-    // Create transcription event object
-    const transcriptionEvent = {
-      chunkId,
-      text,
-      isFinal: Boolean(isFinal),
-      timestamp,
-      source: 'twilio'
-    };
-
-    console.log(`Transcription for call ${callSid}:`, transcriptionEvent);
-
-    // Write to Twilio Sync List
-    const client = context.getTwilioClient();
-    const syncListName = `transcriptions-${callSid}`;
-
-    try {
-      // Try to add to existing list
-      await client.sync.v1.services(TWILIO_SYNC_SERVICE_SID)
-        .syncLists(syncListName)
-        .syncListItems
-        .create({
-          data: transcriptionEvent
-        });
-    } catch (error) {
-      if (error.code === 20404) {
-        // List doesn't exist, create it first
-        await client.sync.v1.services(TWILIO_SYNC_SERVICE_SID)
-          .syncLists
-          .create({ uniqueName: syncListName });
-
-        // Now add the item
-        await client.sync.v1.services(TWILIO_SYNC_SERVICE_SID)
-          .syncLists(syncListName)
-          .syncListItems
-          .create({
-            data: transcriptionEvent
-          });
-      } else {
-        throw error;
+      if (!transcriptionText) {
+        console.log('No transcription text in content event');
+        response.setBody('ok');
+        break;
       }
-    }
 
-    response.setStatusCode(204);
-    response.setBody('');
-    callback(null, response);
+      console.log('Received transcription:', {
+        callSid,
+        track,
+        sequenceId,
+        text: transcriptionText
+      });
 
-  } catch (error) {
-    console.error('Error processing transcription:', error);
-    response.setStatusCode(500);
-    response.setBody(JSON.stringify({ error: error.message }));
-    callback(null, response);
+      // Here you would normally broadcast via WebSocket to connected clients
+      // For now, we just log it
+      console.log(`[${callSid}] [${track}] ${transcriptionText}`);
+      response.setBody('ok');
+      break;
+
+    default:
+      console.log(`Unknown transcription event: ${transcriptionEvent}`);
+      response.setBody('ok');
   }
+
+  callback(null, response);
 };

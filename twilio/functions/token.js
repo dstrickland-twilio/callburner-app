@@ -4,6 +4,7 @@ exports.handler = async function tokenHandler(context, event, callback) {
   response.appendHeader('Access-Control-Allow-Origin', allowOrigin);
   response.appendHeader('Access-Control-Allow-Methods', 'OPTIONS, POST');
   response.appendHeader('Access-Control-Allow-Headers', 'Content-Type');
+  response.appendHeader('Content-Type', 'application/json');
 
   if (event.httpMethod === 'OPTIONS') {
     response.setStatusCode(204);

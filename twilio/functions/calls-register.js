@@ -12,13 +12,17 @@ exports.handler = async function(context, event, callback) {
 
   // Handle preflight
   if (event.httpMethod === 'OPTIONS') {
-    response.setStatusCode(200);
-    response.setBody('');
+    response.setStatusCode(204);
     return callback(null, response);
   }
 
   try {
-    const { callSid, to, startedAt } = typeof event === 'string' ? JSON.parse(event) : event;
+    // Extract data from event - Twilio runtime provides parsed body
+    const callSid = event.callSid;
+    const to = event.to;
+    const startedAt = event.startedAt;
+    const amdEnabledRaw = event.amdEnabled;
+    const amdEnabled = amdEnabledRaw === true || amdEnabledRaw === 'true';
 
     if (!callSid || !to) {
       response.setStatusCode(400);
@@ -30,7 +34,10 @@ exports.handler = async function(context, event, callback) {
       callSid,
       dialedNumber: to,
       startedAt,
-      status: 'in-progress'
+      status: 'in-progress',
+      direction: 'outbound-api',
+      amdEnabled,
+      ...(amdEnabled ? { amdStatus: 'Detecting' } : {})
     };
 
     const client = context.getTwilioClient();
@@ -54,8 +61,8 @@ exports.handler = async function(context, event, callback) {
       }
     }
 
-    response.setStatusCode(204);
-    response.setBody('');
+    response.setStatusCode(200);
+    response.setBody(JSON.stringify({ success: true }));
     callback(null, response);
 
   } catch (error) {

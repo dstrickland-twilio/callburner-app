@@ -16,7 +16,7 @@ export const requestAccessToken = async (identity: string) => {
   return data.token;
 };
 
-export const registerCall = async (payload: { callSid: string; to: string; startedAt: string }) => {
+export const registerCall = async (payload: { callSid: string; to: string; startedAt: string; amdEnabled?: boolean }) => {
   await api.post('/calls-register', payload);
 };
 

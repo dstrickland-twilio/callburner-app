@@ -27,14 +27,17 @@ exports.handler = async function(context, event, callback) {
     const client = context.getTwilioClient();
     await client.calls(callSid).update({ status: 'completed' });
 
-    response.setStatusCode(204);
-    response.setBody('');
+    response.setStatusCode(200);
+    response.setBody(JSON.stringify({ success: true, message: 'Call ended' }));
     callback(null, response);
 
   } catch (error) {
     console.error('Error hanging up call:', error);
     response.setStatusCode(500);
-    response.setBody(JSON.stringify({ error: error.message }));
+    response.setBody(JSON.stringify({ 
+      error: error.message || 'Failed to hang up call',
+      details: String(error)
+    }));
     callback(null, response);
   }
 };

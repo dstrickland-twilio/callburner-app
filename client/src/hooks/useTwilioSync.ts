@@ -12,6 +12,7 @@ export const useTwilioSync = (callSid?: string) => {
   const syncClientRef = useRef<SyncClient | null>(null);
   const [events, setEvents] = useState<TranscriptionEvent[]>([]);
   const [isConnected, setIsConnected] = useState(false);
+  const [amdStatus, setAmdStatus] = useState<string | null>(null);
 
   const reset = useCallback(() => {
     setEvents([]);
@@ -62,6 +63,28 @@ export const useTwilioSync = (callSid?: string) => {
           console.log('Sync connection state:', state);
           setIsConnected(state === 'connected');
         });
+
+        // Subscribe to call document for AMD updates
+        try {
+          const callDoc = await syncClient.document(`call-${callSid}`);
+
+          // Get initial AMD status
+          const callData = callDoc.data as any;
+          if (callData?.amdStatus) {
+            setAmdStatus(callData.amdStatus);
+          }
+
+          // Listen for AMD updates
+          callDoc.on('updated', (args) => {
+            const data = args.data as any;
+            if (data?.amdStatus && data.amdStatus !== 'Detecting') {
+              console.log('AMD status updated:', data.amdStatus);
+              setAmdStatus(data.amdStatus);
+            }
+          });
+        } catch (error: any) {
+          console.log('Call document not yet created:', error.message);
+        }
 
         // Subscribe to the transcription list for this call
         const listName = `transcriptions-${callSid}`;
@@ -146,6 +169,7 @@ export const useTwilioSync = (callSid?: string) => {
   return {
     events,
     reset,
-    isConnected
+    isConnected,
+    amdStatus
   };
 };

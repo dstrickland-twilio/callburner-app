@@ -1,11 +1,29 @@
 exports.handler = function voiceHandler(context, event, callback) {
   const { TWILIO_CALLER_ID } = context;
-
-  // Use the Twilio Functions domain for callbacks
   const baseUrl = `https://${context.DOMAIN_NAME}`;
+  const destination = event.To;
 
+  console.log('Voice webhook called with params:', {
+    CallSid: event.CallSid,
+    To: event.To,
+    amd: event.amd,
+    record: event.record,
+    amdType: typeof event.amd,
+    amdCheck: event.amd === 'true',
+    allParams: event
+  });
+
+  // Use Twilio TwiML library for proper XML generation
+  const twiml = new Twilio.twiml.VoiceResponse();
+
+  // Add transcription start manually (TwiML helper doesn't support Transcription tag yet)
+  // We need to add this FIRST, before the Dial
+  const transcriptionXml = `<Start><Transcription name="Transcription for ${event.CallSid}" track="both_tracks" statusCallbackUrl="${baseUrl}/transcription-realtime" /></Start>`;
+
+  // Build Dial options - ONLY recording-related and answerOnBridge attributes are supported on <Dial>
+  // Call status tracking is handled via the API when creating the call, not in TwiML
   const dialOptions = {
-    answerOnBridge: true // Enables media streams to be established before call is connected
+    answerOnBridge: true
   };
 
   if (TWILIO_CALLER_ID) {
@@ -15,53 +33,61 @@ exports.handler = function voiceHandler(context, event, callback) {
   if (event.record === 'true') {
     dialOptions.record = 'record-from-answer';
     dialOptions.trim = 'trim-silence';
+    dialOptions.recordingStatusCallback = `${baseUrl}/calls-status`;
+    dialOptions.recordingStatusCallbackEvent = 'in-progress completed';
+    dialOptions.recordingStatusCallbackMethod = 'POST';
   }
 
-  const destination = event.To;
-
-  // Build TwiML manually to include transcription
-  let twimlStr = '<?xml version="1.0" encoding="UTF-8"?><Response>';
-
-  // Add transcription start
-  twimlStr += `<Start><Transcription name="Transcription for ${event.CallSid}" track="both_tracks" statusCallbackUrl="${baseUrl}/transcription-realtime" /></Start>`;
-
-  // Build dial options as XML attributes
-  let dialAttrs = 'answerOnBridge="true"';
-  if (TWILIO_CALLER_ID) {
-    dialAttrs += ` callerId="${TWILIO_CALLER_ID}"`;
-  }
-  if (event.record === 'true') {
-    dialAttrs += ' record="record-from-answer" trim="trim-silence"';
+  // AMD is configured at the API level when creating the call, not in TwiML
+  if (event.amd === 'true') {
+    console.log('AMD enabled for call', event.CallSid, '- configured via API parameters');
   }
 
-  // Add callbacks to Twilio Functions endpoints
-  dialAttrs += ` recordingStatusCallback="${baseUrl}/calls-status"`;
-  dialAttrs += ' recordingStatusCallbackEvent="in-progress completed"';
-  dialAttrs += ' recordingStatusCallbackMethod="POST"';
-  dialAttrs += ` statusCallback="${baseUrl}/calls-status"`;
-  dialAttrs += ' statusCallbackEvent="initiated ringing answered completed"';
+  const dial = twiml.dial(dialOptions);
 
-  twimlStr += `<Dial ${dialAttrs}>`;
-
+  // Add destination
   if (destination && /^\+?[\d*#]+$/.test(destination)) {
     if (!TWILIO_CALLER_ID) {
-      twimlStr = '<?xml version="1.0" encoding="UTF-8"?><Response><Say>Outbound dialing is not configured. Please set a caller ID number.</Say></Response>';
+      twiml.say('Outbound dialing is not configured. Please set a caller ID number.');
     } else {
-      twimlStr += `<Number>${destination}</Number>`;
+      // Configure AMD on the Number element
+      const numberOptions = {};
+      
+      if (event.amd === 'true') {
+        const amdCallbackUrl = `${baseUrl}/calls-amd`;
+        console.log('Configuring AMD on <Number> for call', event.CallSid);
+        console.log('AMD callback URL:', amdCallbackUrl);
+        
+        numberOptions.machineDetection = 'DetectMessageEnd';
+        numberOptions.amdStatusCallback = amdCallbackUrl;
+        numberOptions.amdStatusCallbackMethod = 'POST';
+        numberOptions.machineDetectionTimeout = 30;
+        numberOptions.machineDetectionSpeechThreshold = 2400;
+        numberOptions.machineDetectionSpeechEndThreshold = 1500;
+        
+        console.log('Number AMD options:', JSON.stringify(numberOptions, null, 2));
+      }
+      
+      dial.number(numberOptions, destination);
+      
+      // Log the TwiML immediately after adding the number
+      const twimlAfterNumber = twiml.toString();
+      console.log('TwiML after adding Number:', twimlAfterNumber);
     }
   } else if (destination) {
-    twimlStr += `<Client>${destination}</Client>`;
+    dial.client(destination);
   } else {
-    twimlStr = '<?xml version="1.0" encoding="UTF-8"?><Response><Say>No destination number provided.</Say></Response>';
+    twiml.say('No destination number provided.');
   }
 
-  if (destination && (TWILIO_CALLER_ID || !/^\+?[\d*#]+$/.test(destination))) {
-    twimlStr += '</Dial>';
-  }
-  twimlStr += '</Response>';
+  // Get the TwiML string and insert transcription at the beginning
+  const twimlStr = twiml.toString();
+  const finalTwiml = twimlStr.replace('<Response>', `<Response>${transcriptionXml}`);
+  
+  console.log('Final TwiML with transcription:', finalTwiml);
 
   const response = new Twilio.Response();
   response.appendHeader('Content-Type', 'text/xml');
-  response.setBody(twimlStr);
+  response.setBody(finalTwiml);
   callback(null, response);
 };

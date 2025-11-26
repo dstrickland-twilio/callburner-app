@@ -5,11 +5,18 @@ export interface CallSummary {
   dialedNumber: string;
   startedAt: string;
   endedAt?: string;
+  duration?: string;
   recordingUrl?: string;
   transcriptUrl?: string;
   recordingSid?: string;
   status?: string;
   statusUpdatedAt?: string;
+  amdEnabled?: boolean;
+  amdStatus?: string;
+  amdResult?: string;
+  amdConfidence?: string;
+  amdDuration?: string;
+  amdTimestamp?: string;
 }
 
 export interface TranscriptionEvent {
@@ -17,4 +24,5 @@ export interface TranscriptionEvent {
   timestamp: number;
   text: string;
   isFinal: boolean;
+  track?: string; // 'inbound_track' (Customer) or 'outbound_track' (Agent)
 }

@@ -12,6 +12,7 @@ interface UseTwilioDeviceOptions {
 interface ConnectOptions {
   to: string;
   record: boolean;
+  amd?: boolean;
 }
 
 export const useTwilioDevice = ({ identity, onIncomingCall, onCallEnded }: UseTwilioDeviceOptions) => {
@@ -66,7 +67,7 @@ export const useTwilioDevice = ({ identity, onIncomingCall, onCallEnded }: UseTw
   }, [createOrUpdateDevice]);
 
   const connect = useCallback(
-    async ({ to, record }: ConnectOptions) => {
+    async ({ to, record, amd }: ConnectOptions) => {
       if (!deviceRef.current) {
         await createOrUpdateDevice();
       }
@@ -77,7 +78,13 @@ export const useTwilioDevice = ({ identity, onIncomingCall, onCallEnded }: UseTw
       }
 
       setPhase('dialing');
-      const connection = await device.connect({ params: { To: to, record: record ? 'true' : 'false' } });
+      const connection = await device.connect({
+        params: {
+          To: to,
+          record: record ? 'true' : 'false',
+          ...(amd !== undefined ? { amd: amd ? 'true' : 'false' } : {})
+        }
+      });
 
       connection.on('accept', () => {
         setPhase(record ? 'recording' : 'in-call');
