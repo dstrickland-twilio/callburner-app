@@ -43,3 +43,29 @@ export const fetchRecentCalls = async () => {
   // For now, return empty array - we'll implement this with Sync later
   return [] as CallSummary[];
 };
+
+export const initiateCall = async ({
+  to,
+  record,
+  amd,
+  identity
+}: {
+  to: string;
+  record: boolean;
+  amd: boolean;
+  identity: string;
+}): Promise<string> => {
+  // Use Twilio Function URL instead of /api/calls/initiate
+  const response = await api.post('/calls-initiate', {
+    to,
+    record: record.toString(),
+    amd: amd.toString(),
+    identity
+  });
+  
+  if (response.status !== 200) {
+    throw new Error(response.data.error || 'Failed to initiate call');
+  }
+  
+  return response.data.callSid;
+};

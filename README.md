@@ -1,14 +1,29 @@
-# CallBurner - Local Twilio Dialer
+# CallBurner - Twilio Web Dialer
 
-A local-first web dialer that pairs a polished React UI with an Express backend wrapping the core Twilio Voice features you described: dialing, hangup, call recording, live transcription display, and post-call summaries.
+A web-based dialer with a polished React UI and flexible backend options: local Express server for development or Twilio Serverless Functions for production. Features include dialing, hangup, call recording, live transcription, answering machine detection (AMD), and post-call summaries.
 
 ## Project layout
 
 ```
 callburner-app/
 ├── client/   # Vite + React (TypeScript) SPA
-└── server/   # Express server for Twilio tokens, call control, transcription fan-out
+├── server/   # Express server for local development
+└── twilio/   # Twilio Serverless Functions for production deployment
 ```
+
+## Architecture Options
+
+### Option 1: Local Development (Express)
+- Express server for local testing
+- Requires ngrok for Twilio webhooks
+- Good for development and testing
+
+### Option 2: Production (Twilio Serverless Functions)
+- Deploy to Twilio's serverless platform
+- No server maintenance required
+- Built-in HTTPS and scaling
+- **Recommended for production use**
+- **Required for AMD via REST API**
 
 ## Prerequisites
 
@@ -42,40 +57,76 @@ SIMULATE_TRANSCRIPTION=false
 
 > 💡 Run `ngrok http 4000` (or similar) and paste the generated URL into `PUBLIC_BASE_URL`. Update your TwiML App, Voice status callback, and (optionally) transcription webhook URLs inside Twilio Console to use the same host.
 
-### Hosting `/token` + `/voice` on Twilio Functions (no ngrok required)
+### Production Deployment with Twilio Functions (Recommended)
 
-If you only want Twilio to handle the voice webhook and access token (so the browser never has to reach your local server), deploy the small Twilio Serverless project included in `twilio/`:
+For production use, deploy to Twilio Serverless Functions. This eliminates the need for server maintenance and provides built-in scaling.
+
+**Benefits**:
+- ✅ No ngrok required
+- ✅ Built-in HTTPS and scaling
+- ✅ AMD via REST API support
+- ✅ Twilio Sync for real-time updates
+- ✅ No server to maintain
 
 1. Install the Twilio CLI if you have not already: `npm install -g twilio-cli`
-2. Copy `server/.env` values into `twilio/.env` using the keys Twilio Functions expects:
+2. Create `twilio/.env` with required environment variables:
    ```
    TWILIO_ACCOUNT_SID=ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+   TWILIO_AUTH_TOKEN=your_auth_token
    TWILIO_API_KEY=SKxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
    TWILIO_API_SECRET=your_api_secret
    TWILIO_TWIML_APP_SID=APxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
    TWILIO_CALLER_ID=+15555555555
-   PUBLIC_BASE_URL=https://<your-public-server-or-render-app>
-   ALLOWED_ORIGIN=https://localhost:5173
+   TWILIO_SYNC_SERVICE_SID=ISxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+   ALLOWED_ORIGIN=*
    ```
-   > ✅ You can leave `PUBLIC_BASE_URL` pointing at wherever your Express app runs (Render, Fly, etc.). It is only needed for status callbacks.
+   
+   **Get Sync Service SID**: https://console.twilio.com/us1/develop/sync/services (create one if needed)
+
 3. Deploy the functions:
    ```
    cd twilio
    twilio login
    twilio serverless:deploy --service-name callburner-functions
    ```
-4. In Twilio Console update your TwiML App Voice URL to the new `voice` function URL (shown after deploy) and point the React app’s token request to the `token` function URL (copy `client/.env.example` to `client/.env` and set `VITE_TWILIO_TOKEN_URL=https://<twilio-function-domain>/token`).
 
-The rest of the Express server (WebSocket transcripts, call log, recording controls) still needs to be reachable from Twilio. Deploy it to any small Node host when you are ready, or keep using ngrok for those routes while you experiment.
+4. After deployment, note your Functions domain (e.g., `callburner-functions-2333-dev.twil.io`)
 
-### Enable real-time transcription (Twilio)
+5. Update `client/.env`:
+   ```
+   VITE_TWILIO_FUNCTIONS_URL=https://your-function-domain.twil.io
+   VITE_TWILIO_TOKEN_URL=https://your-function-domain.twil.io/token
+   ```
 
-1. Set `SIMULATE_TRANSCRIPTION=false` in `server/.env` so the fake phrases stay disabled.
-2. Make sure `PUBLIC_BASE_URL` points to a public URL (ngrok while local, Render/Fly/etc. in prod). The server exposes `/api/transcriptions/realtime` for Twilio’s callbacks.
-3. Keep using this project’s `/voice` TwiML: it now adds a `<Start><Transcription transcriptionType="real-time" track="both_tracks" ... />` block automatically when `PUBLIC_BASE_URL` is set.
-4. In Twilio Console, enable Real-time Transcription for the voice app/number you are using (follow [Twilio’s guide](https://www.twilio.com/docs/voice/api/realtime-transcription-resource)). Twilio will stream partial + final segments to the callback URL above and the web app will echo them live.
+6. Update your TwiML App in Twilio Console:
+   - Go to: https://console.twilio.com/us1/develop/voice/manage/twiml-apps
+   - Update Voice Request URL to: `https://your-function-domain.twil.io/voice`
+   - Method: `HTTP POST`
 
-> Need to ingest transcripts from someplace else? POST to `/api/transcriptions` with `{ callSid, chunkId, text, isFinal }` and the UI will render it the same way.
+**See [DEPLOYMENT.md](./DEPLOYMENT.md) for complete deployment instructions.**
+
+## Features
+
+### Answering Machine Detection (AMD)
+
+CallBurner supports AMD v3 via Twilio Serverless Functions:
+- Automatically detects human vs. voicemail
+- Real-time status updates via Twilio Sync
+- Non-blocking detection (call proceeds while detecting)
+- Supports both TwiML-based and REST API-based AMD
+
+See [AMD-SERVERLESS-IMPLEMENTATION.md](./AMD-SERVERLESS-IMPLEMENTATION.md) for details.
+
+### Real-time Transcription
+
+Twilio's real-time transcription is automatically enabled when using Twilio Functions. The transcription callbacks are handled by the `/transcription-realtime` function.
+
+For local development with Express:
+1. Set `SIMULATE_TRANSCRIPTION=false` in `server/.env`
+2. Make sure `PUBLIC_BASE_URL` points to a public URL (ngrok while local)
+3. The server exposes `/api/transcriptions/realtime` for Twilio's callbacks
+
+The TwiML automatically includes transcription configuration when deployed.
 
 ## Install dependencies
 
