@@ -28,6 +28,11 @@ export const toggleRecording = async (callSid: string, action: 'start' | 'stop')
   await api.post('/calls-recording-toggle', { callSid, action });
 };
 
+export const initiateCall = async (payload: { to: string; identity: string; record?: boolean; amd?: boolean }) => {
+  const { data } = await api.post<{ callSid: string }>('/calls-initiate', payload);
+  return data.callSid;
+};
+
 export const fetchCallSummary = async (callSid: string) => {
   // Fetch from Twilio Sync instead
   // For now, return a mock response - we'll implement this with Sync later
