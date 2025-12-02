@@ -50,7 +50,7 @@ exports.handler = async function(context, event, callback) {
           amdStatus,
           amdResult: AnsweredBy,
           answeredBy: AnsweredBy,
-          machineDetectionDuration: parseInt(MachineDetectionDuration) || 0,
+          machineDetectionDuration: parseInt(MachineDetectionDuration, 10) || 0,
           amdTimestamp: new Date().toISOString()
         };
         

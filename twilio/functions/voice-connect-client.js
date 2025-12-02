@@ -6,16 +6,20 @@ exports.handler = function(context, event, callback) {
   const { identity, record } = event;
   const baseUrl = `https://${context.DOMAIN_NAME}`;
   
+  // Validate CallSid to prevent XSS
+  const callSid = event.CallSid || 'unknown';
+  const safeCallSid = String(callSid).replace(/[^A-Za-z0-9]/g, '');
+  
   console.log('Connecting to client:', {
     identity,
     record,
-    callSid: event.CallSid
+    callSid: safeCallSid
   });
   
   const twiml = new Twilio.twiml.VoiceResponse();
   
   // Start transcription - add this manually as TwiML helper doesn't support it yet
-  const transcriptionXml = `<Start><Transcription name="Transcription for ${event.CallSid}" track="both_tracks" statusCallbackUrl="${baseUrl}/transcription-realtime" /></Start>`;
+  const transcriptionXml = `<Start><Transcription name="Transcription for ${safeCallSid}" track="both_tracks" statusCallbackUrl="${baseUrl}/transcription-realtime" /></Start>`;
   
   // Build Dial options
   const dialOptions = {
