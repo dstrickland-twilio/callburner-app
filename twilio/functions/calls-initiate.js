@@ -36,10 +36,14 @@ exports.handler = async function(context, event, callback) {
     });
     
     // Build call parameters
+    const voiceUrl = new URL(`${baseUrl}/voice-connect-client`);
+    voiceUrl.searchParams.set('identity', identity);
+    voiceUrl.searchParams.set('record', record);
+    
     const callParams = {
       to: to,
       from: context.TWILIO_CALLER_ID,
-      url: `${baseUrl}/voice-connect-client?identity=${encodeURIComponent(identity)}&record=${encodeURIComponent(record)}`,
+      url: voiceUrl.toString(),
       statusCallback: `${baseUrl}/calls-status`,
       statusCallbackEvent: ['initiated', 'ringing', 'answered', 'completed'],
       statusCallbackMethod: 'POST'

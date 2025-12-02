@@ -10,6 +10,14 @@ exports.handler = function(context, event, callback) {
   const callSid = event.CallSid || 'unknown';
   const safeCallSid = String(callSid).replace(/[^A-Za-z0-9]/g, '');
   
+  // XML escape function
+  const escapeXml = (str) => String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+  
   console.log('Connecting to client:', {
     identity,
     record,
@@ -19,7 +27,9 @@ exports.handler = function(context, event, callback) {
   const twiml = new Twilio.twiml.VoiceResponse();
   
   // Start transcription - add this manually as TwiML helper doesn't support it yet
-  const transcriptionXml = `<Start><Transcription name="Transcription for ${safeCallSid}" track="both_tracks" statusCallbackUrl="${baseUrl}/transcription-realtime" /></Start>`;
+  const transcriptionName = escapeXml(`Transcription for ${safeCallSid}`);
+  const transcriptionCallback = escapeXml(`${baseUrl}/transcription-realtime`);
+  const transcriptionXml = `<Start><Transcription name="${transcriptionName}" track="both_tracks" statusCallbackUrl="${transcriptionCallback}" /></Start>`;
   
   // Build Dial options
   const dialOptions = {
@@ -45,9 +55,14 @@ exports.handler = function(context, event, callback) {
   const dial = twiml.dial(dialOptions);
   dial.client(identity);
   
-  // Insert transcription at the beginning
+  // Insert transcription at the beginning using safer replacement
   const twimlStr = twiml.toString();
-  const finalTwiml = twimlStr.replace('<Response>', `<Response>${transcriptionXml}`);
+  // Only replace the first occurrence of <Response> tag
+  const responseTagIndex = twimlStr.indexOf('<Response>');
+  let finalTwiml = twimlStr;
+  if (responseTagIndex !== -1) {
+    finalTwiml = twimlStr.slice(0, responseTagIndex + 10) + transcriptionXml + twimlStr.slice(responseTagIndex + 10);
+  }
   
   console.log('Generated TwiML:', finalTwiml);
   
