@@ -135,6 +135,39 @@ Prefer another host? Any Node-friendly platform that runs `npm install`, `npm ru
 - Recording control endpoints (`start` / `stop`) managing the latest recording SID per call
 - WebSocket hub for transcript broadcasting (+ optional simulator for local demos)
 
+## Answering Machine Detection (AMD)
+
+CallBurner includes Twilio's Answering Machine Detection (AMD v3) using REST API with AsyncAmd support. AMD automatically detects whether a call was answered by a human, voicemail system, fax machine, or other machine.
+
+### How It Works
+
+When AMD is enabled:
+1. Call is initiated via REST API (`/api/calls/initiate`)
+2. Twilio connects to the phone number
+3. AMD detection runs in background (non-blocking)
+4. Call dials back to browser client
+5. AMD results delivered via webhook to `/api/calls/amd-status`
+
+### AMD Results
+
+- **Human**: Call answered by a person
+- **Voicemail**: Answering machine or voicemail detected
+- **Fax**: Fax machine detected
+- **Unknown**: Unable to determine
+
+### Documentation
+
+- **[AMD REST API Implementation](AMD-REST-API-IMPLEMENTATION.md)** - Technical architecture
+- **[AMD Test Validation Guide](AMD-TEST-VALIDATION.md)** - Comprehensive testing procedures
+- **[AMD Migration Guide](AMD-MIGRATION-GUIDE.md)** - User-friendly migration guide
+- **[Implementation Summary](IMPLEMENTATION-SUMMARY.md)** - Quick reference
+
+### Requirements
+
+- AMD must be enabled in your Twilio account (Console → Voice → Settings)
+- Account needs credits (AMD costs $0.0075 per detection)
+- `PUBLIC_BASE_URL` must be publicly accessible for webhooks
+
 ## Next steps / production hardening
 
 - Persist call records & transcripts beyond process memory (Redis, Postgres, etc.)
@@ -142,5 +175,6 @@ Prefer another host? Any Node-friendly platform that runs `npm install`, `npm ru
 - Serve the Vite build via the Express app for a single command deploy
 - Handle inbound calls and agent routing (Twilio `Device.on('incoming')` already wired)
 - Replace the transcript simulator with Twilio Media Streams or Voice Intelligence webhooks
+- Integrate AMD status with Twilio Sync for real-time UI updates
 
 Enjoy the new dialer! 🎧
