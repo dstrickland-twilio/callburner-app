@@ -577,7 +577,7 @@ app.post('/api/calls/initiate', async (req, res) => {
 
   try {
     const callParams = {
-      to: to,
+      to,
       from: TWILIO_CALLER_ID,
       url: `${PUBLIC_BASE_URL}/voice/connect-client`,
       method: 'POST',
@@ -881,12 +881,12 @@ app.post('/voice/continue', (req, res) => {
 app.post('/api/calls/amd', (req, res) => {
   const { CallSid, AnsweredBy, MachineDetectionDuration, Confidence } = req.body;
   
-  console.log('AMD callback received (legacy endpoint):', {
+  logger.info({
     callSid: CallSid,
     answeredBy: AnsweredBy,
     duration: MachineDetectionDuration,
     confidence: Confidence
-  });
+  }, 'AMD callback received (legacy endpoint)');
 
   if (!CallSid) {
     res.status(400).json({ error: 'CallSid is required' });
@@ -915,9 +915,9 @@ app.post('/api/calls/amd', (req, res) => {
     summary.amdTimestamp = new Date().toISOString();
     callStore.set(CallSid, summary);
     
-    console.log(`Updated call ${CallSid} with AMD status: ${amdStatus}`);
+    logger.info({ callSid: CallSid, amdStatus }, 'Updated call with AMD status');
   } else {
-    console.warn(`Call ${CallSid} not found in call store for AMD update`);
+    logger.warn({ callSid: CallSid }, 'Call not found in call store for AMD update');
   }
 
   // Acknowledge receipt

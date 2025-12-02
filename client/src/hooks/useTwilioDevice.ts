@@ -15,6 +15,9 @@ interface ConnectOptions {
   amd?: boolean;
 }
 
+// Timeout for waiting on incoming connection after REST API call initiation
+const INCOMING_CONNECTION_TIMEOUT_MS = 30000; // 30 seconds
+
 export const useTwilioDevice = ({ identity, onIncomingCall, onCallEnded }: UseTwilioDeviceOptions) => {
   const deviceRef = useRef<Device | null>(null);
   const [phase, setPhase] = useState<CallPhase>('idle');
@@ -45,11 +48,8 @@ export const useTwilioDevice = ({ identity, onIncomingCall, onCallEnded }: UseTw
         setError(deviceError.message);
       });
       device.on('incoming', (connection) => {
-        console.log('Incoming connection received:', connection.parameters);
-        
         // Check if this is the incoming connection for a pending REST API call
         if (pendingConnectionRef.current) {
-          console.log('Resolving pending REST API call with incoming connection');
           pendingConnectionRef.current.resolve(connection);
           pendingConnectionRef.current = null;
         }
@@ -92,8 +92,6 @@ export const useTwilioDevice = ({ identity, onIncomingCall, onCallEnded }: UseTw
       // Use REST API approach for calls with AMD enabled OR for all calls (to maintain consistency)
       // This enables proper AsyncAmd support
       try {
-        console.log('Initiating call via REST API with AMD:', amd);
-        
         // Initiate call via REST API
         const callSid = await initiateCall({
           to,
@@ -101,8 +99,6 @@ export const useTwilioDevice = ({ identity, onIncomingCall, onCallEnded }: UseTw
           amd: amd ?? false,
           identity
         });
-
-        console.log('REST API call initiated, CallSid:', callSid);
 
         // Wait for the incoming connection to be established
         const connection = await new Promise<Call>((resolve, reject) => {
@@ -114,10 +110,8 @@ export const useTwilioDevice = ({ identity, onIncomingCall, onCallEnded }: UseTw
               pendingConnectionRef.current = null;
               reject(new Error('Timeout waiting for incoming connection'));
             }
-          }, 30000); // 30 second timeout
+          }, INCOMING_CONNECTION_TIMEOUT_MS);
         });
-
-        console.log('Incoming connection received for REST API call');
 
         // Set up connection event handlers
         connection.on('accept', () => {
