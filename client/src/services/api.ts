@@ -11,9 +11,26 @@ const api = axios.create({
 
 const twilioTokenUrl = import.meta.env.VITE_TWILIO_TOKEN_URL || `${TWILIO_FUNCTIONS_URL}/token`;
 
+// Use local Express server for REST API call initiation
+const EXPRESS_API_URL = import.meta.env.VITE_EXPRESS_API_URL || 
+  (window.location.origin.includes('localhost') ? 'http://localhost:4000' : window.location.origin);
+
 export const requestAccessToken = async (identity: string) => {
   const { data } = await axios.post<{ token: string }>(twilioTokenUrl, { identity });
   return data.token;
+};
+
+export const initiateCall = async (payload: { 
+  to: string; 
+  record: boolean; 
+  amd: boolean; 
+  identity: string 
+}) => {
+  const { data } = await axios.post<{ callSid: string }>(
+    `${EXPRESS_API_URL}/api/calls/initiate`, 
+    payload
+  );
+  return data.callSid;
 };
 
 export const registerCall = async (payload: { callSid: string; to: string; startedAt: string; amdEnabled?: boolean }) => {

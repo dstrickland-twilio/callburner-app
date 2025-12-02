@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Device, Call } from '@twilio/voice-sdk';
-import { requestAccessToken } from '../services/api';
+import { requestAccessToken, initiateCall } from '../services/api';
 import type { CallPhase } from '../types';
 
 interface UseTwilioDeviceOptions {
@@ -15,11 +15,15 @@ interface ConnectOptions {
   amd?: boolean;
 }
 
+// Timeout for waiting on incoming connection after REST API call initiation
+const INCOMING_CONNECTION_TIMEOUT_MS = 30000; // 30 seconds
+
 export const useTwilioDevice = ({ identity, onIncomingCall, onCallEnded }: UseTwilioDeviceOptions) => {
   const deviceRef = useRef<Device | null>(null);
   const [phase, setPhase] = useState<CallPhase>('idle');
   const [activeConnection, setActiveConnection] = useState<Call | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const pendingConnectionRef = useRef<{ callSid: string; resolve: (call: Call) => void; reject: (err: Error) => void } | null>(null);
 
   const createOrUpdateDevice = useCallback(async () => {
     try {
@@ -44,6 +48,12 @@ export const useTwilioDevice = ({ identity, onIncomingCall, onCallEnded }: UseTw
         setError(deviceError.message);
       });
       device.on('incoming', (connection) => {
+        // Check if this is the incoming connection for a pending REST API call
+        if (pendingConnectionRef.current) {
+          pendingConnectionRef.current.resolve(connection);
+          pendingConnectionRef.current = null;
+        }
+        
         onIncomingCall?.(connection);
       });
       device.on('unregistered', () => setPhase('idle'));
@@ -78,38 +88,62 @@ export const useTwilioDevice = ({ identity, onIncomingCall, onCallEnded }: UseTw
       }
 
       setPhase('dialing');
-      const connection = await device.connect({
-        params: {
-          To: to,
-          record: record ? 'true' : 'false',
-          ...(amd !== undefined ? { amd: amd ? 'true' : 'false' } : {})
-        }
-      });
 
-      connection.on('accept', () => {
-        setPhase(record ? 'recording' : 'in-call');
-        setActiveConnection(connection);
-      });
+      // Use REST API approach for calls with AMD enabled OR for all calls (to maintain consistency)
+      // This enables proper AsyncAmd support
+      try {
+        // Initiate call via REST API
+        const callSid = await initiateCall({
+          to,
+          record,
+          amd: amd ?? false,
+          identity
+        });
 
-      connection.on('disconnect', () => {
-        setPhase('ended');
-        setActiveConnection(null);
-        onCallEnded?.(connection);
-      });
+        // Wait for the incoming connection to be established
+        const connection = await new Promise<Call>((resolve, reject) => {
+          pendingConnectionRef.current = { callSid, resolve, reject };
 
-      connection.on('cancel', () => {
-        setPhase('idle');
-        setActiveConnection(null);
-      });
+          // Set a timeout in case the connection doesn't come through
+          setTimeout(() => {
+            if (pendingConnectionRef.current?.callSid === callSid) {
+              pendingConnectionRef.current = null;
+              reject(new Error('Timeout waiting for incoming connection'));
+            }
+          }, INCOMING_CONNECTION_TIMEOUT_MS);
+        });
 
-      connection.on('error', (connectionError) => {
+        // Set up connection event handlers
+        connection.on('accept', () => {
+          setPhase(record ? 'recording' : 'in-call');
+          setActiveConnection(connection);
+        });
+
+        connection.on('disconnect', () => {
+          setPhase('ended');
+          setActiveConnection(null);
+          onCallEnded?.(connection);
+        });
+
+        connection.on('cancel', () => {
+          setPhase('idle');
+          setActiveConnection(null);
+        });
+
+        connection.on('error', (connectionError) => {
+          setPhase('error');
+          setError(connectionError.message);
+        });
+
+        return connection;
+      } catch (err) {
+        console.error('Failed to initiate call via REST API:', err);
         setPhase('error');
-        setError(connectionError.message);
-      });
-
-      return connection;
+        setError(err instanceof Error ? err.message : 'Failed to initiate call');
+        throw err;
+      }
     },
-    [createOrUpdateDevice, onCallEnded]
+    [createOrUpdateDevice, onCallEnded, identity]
   );
 
   const disconnect = useCallback(() => {

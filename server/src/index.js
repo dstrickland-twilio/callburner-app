@@ -554,6 +554,100 @@ app.post('/api/transcriptions/recording', (req, res) => {
   res.status(200).send('OK');
 });
 
+// New endpoint to initiate calls via REST API (enables proper AsyncAmd support)
+app.post('/api/calls/initiate', async (req, res) => {
+  if (!twilioClient) {
+    res.status(400).json({ error: 'Twilio client is not configured' });
+    return;
+  }
+
+  const { to, record, amd, identity } = req.body;
+
+  if (!to) {
+    res.status(400).json({ error: 'to (phone number) is required' });
+    return;
+  }
+
+  if (!identity) {
+    res.status(400).json({ error: 'identity is required' });
+    return;
+  }
+
+  logger.info({ to, record, amd, identity }, 'Initiating REST API call');
+
+  try {
+    const callParams = {
+      to,
+      from: TWILIO_CALLER_ID,
+      url: `${PUBLIC_BASE_URL}/voice/connect-client`,
+      method: 'POST',
+      statusCallback: `${PUBLIC_BASE_URL}/api/calls/status`,
+      statusCallbackEvent: ['initiated', 'ringing', 'answered', 'completed'],
+      statusCallbackMethod: 'POST'
+    };
+
+    // Add identity as parameter to pass to TwiML endpoint
+    const urlParams = new URLSearchParams({
+      identity: identity,
+      record: record ? 'true' : 'false'
+    });
+    callParams.url = `${PUBLIC_BASE_URL}/voice/connect-client?${urlParams.toString()}`;
+
+    // Configure AMD if enabled
+    if (amd) {
+      callParams.machineDetection = 'DetectMessageEnd';
+      callParams.asyncAmd = true;
+      callParams.asyncAmdStatusCallback = `${PUBLIC_BASE_URL}/api/calls/amd-status`;
+      callParams.asyncAmdStatusCallbackMethod = 'POST';
+      callParams.machineDetectionTimeout = 30;
+      callParams.machineDetectionSpeechThreshold = 2400;
+      callParams.machineDetectionSpeechEndThreshold = 1500;
+      logger.info({ to }, 'AMD configured for REST API call');
+    }
+
+    // Configure recording if enabled
+    if (record) {
+      callParams.record = true;
+      callParams.recordingStatusCallback = `${PUBLIC_BASE_URL}/api/calls/status`;
+      callParams.recordingStatusCallbackEvent = ['in-progress', 'completed'];
+      callParams.recordingStatusCallbackMethod = 'POST';
+      callParams.trim = 'trim-silence';
+      callParams.transcribe = true;
+      callParams.transcribeCallback = `${PUBLIC_BASE_URL}/api/transcriptions/recording`;
+    }
+
+    logger.debug({ callParams }, 'Creating call with Twilio REST API');
+    const call = await twilioClient.calls.create(callParams);
+
+    logger.info({ callSid: call.sid, to }, 'Call created successfully via REST API');
+
+    // Register call in call store
+    const summary = {
+      callSid: call.sid,
+      dialedNumber: to,
+      startedAt: new Date().toISOString(),
+      status: 'initiated',
+      amdEnabled: amd === true
+    };
+
+    // Set initial AMD status if AMD is enabled
+    if (amd === true) {
+      summary.amdStatus = 'Pending';
+    }
+
+    callStore.set(call.sid, summary);
+
+    // Return CallSid to client
+    res.json({ callSid: call.sid });
+  } catch (error) {
+    logger.error({ error: error.message, to }, 'Failed to initiate call via REST API');
+    res.status(500).json({ 
+      error: 'Failed to initiate call', 
+      details: error.message 
+    });
+  }
+});
+
 app.post('/api/calls/status', (req, res) => {
   const { CallSid, CallStatus, RecordingUrl, RecordingSid, TranscriptionUrl, Timestamp, RecordingStatus } = req.body;
   
@@ -571,6 +665,12 @@ app.post('/api/calls/status', (req, res) => {
 
   const summary = callStore.get(CallSid) ?? { callSid: CallSid };
   summary.status = CallStatus;
+  
+  // Update AMD status when call is answered
+  if (CallStatus === 'answered' && summary.amdEnabled && summary.amdStatus === 'Pending') {
+    summary.amdStatus = 'Detecting';
+    logger.info({ callSid: CallSid }, 'Call answered, AMD detection in progress');
+  }
   
   // Only set endedAt if the call is actually ending
   if (CallStatus === 'completed') {
@@ -603,6 +703,64 @@ app.post('/api/calls/status', (req, res) => {
 
   callStore.set(CallSid, summary);
   res.status(200).send('ok');
+});
+
+// New TwiML endpoint for REST API-initiated calls - dials back to browser client
+app.post('/voice/connect-client', (req, res) => {
+  if (!ensureTwilioConfigured(res)) {
+    return;
+  }
+
+  logger.info({ query: req.query, body: req.body }, 'Connect-client webhook received');
+  
+  const identity = req.query.identity || req.body.identity;
+  const record = req.query.record || req.body.record;
+  const CallSid = req.body.CallSid;
+
+  if (!identity) {
+    logger.error('Missing identity in connect-client request');
+    const twiml = new Twilio.twiml.VoiceResponse();
+    twiml.say('Unable to connect call - missing client identity');
+    res.type('text/xml');
+    res.send(twiml.toString());
+    return;
+  }
+
+  logger.info({ identity, callSid: CallSid, record }, 'Generating TwiML to dial client');
+
+  // Build TwiML manually to include transcription
+  let twimlStr = '<?xml version="1.0" encoding="UTF-8"?><Response>';
+
+  // Add transcription start if PUBLIC_BASE_URL is available
+  if (PUBLIC_BASE_URL) {
+    twimlStr += `<Start><Transcription name="Transcription for ${CallSid}" track="both_tracks" statusCallbackUrl="${PUBLIC_BASE_URL}/api/transcriptions/realtime" statusCallbackMethod="POST" /></Start>`;
+  }
+
+  // Build dial options
+  let dialAttrs = 'answerOnBridge="true"';
+  
+  // Add recording configuration if enabled
+  if (record === 'true' && PUBLIC_BASE_URL) {
+    dialAttrs += ' record="record-from-answer" trim="trim-silence"';
+    dialAttrs += ` transcribe="true" transcribeCallback="${PUBLIC_BASE_URL}/api/transcriptions/recording"`;
+    dialAttrs += ` recordingStatusCallback="${PUBLIC_BASE_URL}/api/calls/status"`;
+    dialAttrs += ' recordingStatusCallbackEvent="in-progress completed"';
+    dialAttrs += ' recordingStatusCallbackMethod="POST"';
+  }
+
+  if (PUBLIC_BASE_URL) {
+    dialAttrs += ` statusCallback="${PUBLIC_BASE_URL}/api/calls/status"`;
+    dialAttrs += ' statusCallbackEvent="initiated ringing answered completed"';
+    dialAttrs += ` action="${PUBLIC_BASE_URL}/voice/continue?callSid=${CallSid}"`;
+    dialAttrs += ' method="POST"';
+  }
+
+  twimlStr += `<Dial ${dialAttrs}><Client>${identity}</Client></Dial>`;
+  twimlStr += '</Response>';
+
+  logger.debug({ twiml: twimlStr }, 'Returning TwiML to dial client');
+  res.type('text/xml');
+  res.send(twimlStr);
 });
 
 app.post('/voice', (req, res) => {
@@ -719,16 +877,16 @@ app.post('/voice/continue', (req, res) => {
   res.send(twiml.toString());
 });
 
-// AMD v3 (Answering Machine Detection) callback handler
+// AMD v3 (Answering Machine Detection) callback handler - legacy endpoint
 app.post('/api/calls/amd', (req, res) => {
   const { CallSid, AnsweredBy, MachineDetectionDuration, Confidence } = req.body;
   
-  console.log('AMD callback received:', {
+  logger.info({
     callSid: CallSid,
     answeredBy: AnsweredBy,
     duration: MachineDetectionDuration,
     confidence: Confidence
-  });
+  }, 'AMD callback received (legacy endpoint)');
 
   if (!CallSid) {
     res.status(400).json({ error: 'CallSid is required' });
@@ -757,9 +915,73 @@ app.post('/api/calls/amd', (req, res) => {
     summary.amdTimestamp = new Date().toISOString();
     callStore.set(CallSid, summary);
     
-    console.log(`Updated call ${CallSid} with AMD status: ${amdStatus}`);
+    logger.info({ callSid: CallSid, amdStatus }, 'Updated call with AMD status');
   } else {
-    console.warn(`Call ${CallSid} not found in call store for AMD update`);
+    logger.warn({ callSid: CallSid }, 'Call not found in call store for AMD update');
+  }
+
+  // Acknowledge receipt
+  res.status(204).send();
+});
+
+// AMD status callback handler for REST API-initiated calls
+app.post('/api/calls/amd-status', (req, res) => {
+  const { CallSid, AnsweredBy, MachineDetectionDuration, Confidence } = req.body;
+  
+  logger.info({
+    callSid: CallSid,
+    answeredBy: AnsweredBy,
+    duration: MachineDetectionDuration,
+    confidence: Confidence
+  }, 'AMD callback received via REST API');
+
+  if (!CallSid) {
+    res.status(400).json({ error: 'CallSid is required' });
+    return;
+  }
+
+  // Handle all AMD result types
+  const amdResultTypes = {
+    'human': 'Human',
+    'machine_start': 'Machine (Start)',
+    'machine_end_beep': 'Voicemail (Beep)',
+    'machine_end_silence': 'Voicemail (Silence)',
+    'machine_end_other': 'Voicemail (Other)',
+    'fax': 'Fax',
+    'unknown': 'Unknown'
+  };
+
+  const amdStatus = amdResultTypes[AnsweredBy] || 'Unknown';
+
+  // Update call store with AMD result
+  const summary = callStore.get(CallSid);
+  if (summary) {
+    summary.amdStatus = amdStatus;
+    summary.amdResult = AnsweredBy;
+    summary.amdConfidence = Confidence;
+    summary.amdDuration = MachineDetectionDuration;
+    summary.amdTimestamp = new Date().toISOString();
+    callStore.set(CallSid, summary);
+    
+    logger.info({ 
+      callSid: CallSid, 
+      amdStatus, 
+      answeredBy: AnsweredBy,
+      confidence: Confidence 
+    }, 'Updated call with AMD detection result');
+  } else {
+    logger.warn({ callSid: CallSid }, 'Call not found in call store for AMD update');
+    
+    // Create a basic entry if call doesn't exist yet
+    callStore.set(CallSid, {
+      callSid: CallSid,
+      amdStatus,
+      amdResult: AnsweredBy,
+      amdConfidence: Confidence,
+      amdDuration: MachineDetectionDuration,
+      amdTimestamp: new Date().toISOString(),
+      amdEnabled: true
+    });
   }
 
   // Acknowledge receipt
