@@ -39,6 +39,18 @@ exports.handler = async function(context, event, callback) {
       callData.endedAt = new Date().toISOString();
     }
 
+    // Track AMD status progression
+    if (callData.amdEnabled) {
+      if (CallStatus === 'initiated') {
+        callData.amdStatus = 'Pending';
+      } else if (CallStatus === 'ringing' || CallStatus === 'in-progress') {
+        // Only update to Detecting if we haven't received AMD result yet
+        if (!callData.answeredBy && !callData.amdResult) {
+          callData.amdStatus = 'Detecting';
+        }
+      }
+    }
+
     if (RecordingUrl) {
       callData.recordingUrl = RecordingUrl;
     }
